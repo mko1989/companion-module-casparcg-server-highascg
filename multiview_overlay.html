@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Multiview overlay</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: transparent !important; background-color: rgba(0,0,0,0) !important; }
+.cell { position: absolute; pointer-events: none; background: transparent !important; }
+.cell-border { position: absolute; border: 3px solid; top: 0; left: 0; right: 0; bottom: 50px; background: transparent !important; }
+.cell-label { position: absolute; left: 0; right: 0; bottom: 0; height: 50px; display: flex; align-items: center; justify-content: center; font: bold 14px/1.2 sans-serif; color: #fff; text-shadow: 0 1px 2px #000; }
+#pgm .cell-border,  .pgm-cell .cell-border  { border-color: #e04040; }
+#pgm .cell-label,   .pgm-cell .cell-label   { background: rgba(224,64,64,0.85); }
+#prev .cell-border, .prev-cell .cell-border { border-color: #40e040; }
+#prev .cell-label,  .prev-cell .cell-label  { background: rgba(64,224,64,0.85); }
+.input-cell .cell-border { border-color: #4080e0; }
+.input-cell .cell-label  { background: rgba(64,128,224,0.85); }
+.input-cell.ndi .cell-border { border-color: #e0c040; }
+.input-cell.ndi .cell-label  { background: rgba(224,192,64,0.85); }
+</style>
+</head>
+<body>
+<!-- Static HTML for all supported cells — avoids document.write which can fail in CasparCG CEF -->
+<div id="pgm"      class="cell"                style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="prev"     class="cell"                style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="pgm2"     class="cell pgm-cell"       style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="prev2"    class="cell prev-cell"      style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="pgm3"     class="cell pgm-cell"       style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="prev3"    class="cell prev-cell"      style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="pgm4"     class="cell pgm-cell"       style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="prev4"    class="cell prev-cell"      style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="decklink0" class="cell input-cell"    style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="decklink1" class="cell input-cell"    style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="decklink2" class="cell input-cell"    style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="decklink3" class="cell input-cell"    style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="decklink4" class="cell input-cell"    style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="decklink5" class="cell input-cell"    style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="decklink6" class="cell input-cell"    style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="decklink7" class="cell input-cell"    style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="ndi0"     class="cell input-cell ndi" style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="ndi1"     class="cell input-cell ndi" style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="ndi2"     class="cell input-cell ndi" style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<div id="ndi3"     class="cell input-cell ndi" style="display:none;"><div class="cell-border"></div><div class="cell-label"></div></div>
+<script>
+(function() {
+    var BORDER_PX = 3;
+    var LABEL_HEIGHT_PX = 50;
+    window['play'] = function() { /* CasparCG calls play(); no-op for this template */ };
+    window['update'] = function(raw) {
+        try {
+            var d;
+            if (typeof raw === 'string') {
+                var s = raw.trim();
+                if (!s) return;
+                /* CasparCG may pass AMCP-escaped JSON (e.g. {\"pgm\":...}); unescape before parse */
+                if (s.indexOf('\\"') !== -1) s = s.replace(/\\"/g, '"');
+                if (s.charAt(0) === '"' && s.length > 1 && s.charAt(s.length - 1) === '"') s = s.slice(1, -1);
+                /* Strip any remaining outer quotes and re-unescape (server may double-wrap) */
+                if (s.charAt(0) === '"') { s = s.slice(1).replace(/\\"/g, '"'); s = s.replace(/"\s*$/, ''); }
+                try {
+                    d = JSON.parse(s);
+                } catch (e1) {
+                    try { d = JSON.parse(s.replace(/^"\s*|\s*"$/g, '')); } catch (e2) { throw e1; }
+                }
+            } else if (raw && typeof raw === 'object') {
+                d = raw;
+            } else {
+                return;
+            }
+            /* Fallback: derive pgm2/prev2/etc from cells array when keyed slots are missing */
+            var cells = d.cells || [];
+            for (var ci = 0; ci < cells.length; ci++) {
+                var cell = cells[ci];
+                var tp  = (cell.type  || '').toLowerCase();
+                var lbl = (cell.label || cell.id || '').toLowerCase();
+                var r   = { x: cell.x, y: cell.y, w: cell.w, h: cell.h, label: cell.label || cell.id || '' };
+                var m, n;
+                if (tp === 'pgm' || /\b(?:program|pgm)\s*\d|\bpgm\d|pgm\s*s\s*\d/.test(lbl)) {
+                    m = lbl.match(/\b(?:program|pgm)\s*(\d+)\b/) || lbl.match(/\bpgm(\d+)\b/) || lbl.match(/pgm\s*s\s*(\d+)/);
+                    n = m ? parseInt(m[1], 10) : 0;
+                    if (!n) n = 1;
+                    if (n === 1 && !d['pgm'])  d['pgm']  = r;
+                    else if (n === 2 && !d['pgm2']) d['pgm2'] = r;
+                    else if (n === 3 && !d['pgm3']) d['pgm3'] = r;
+                    else if (n === 4 && !d['pgm4']) d['pgm4'] = r;
+                } else if (tp === 'prv' || /\b(?:preview|prv)\s*\d|\bprv\d|prv\s*s\s*\d/.test(lbl)) {
+                    m = lbl.match(/\b(?:preview|prv)\s*(\d+)\b/) || lbl.match(/\bprv(\d+)\b/) || lbl.match(/prv\s*s\s*(\d+)/);
+                    n = m ? parseInt(m[1], 10) : 0;
+                    if (!n) n = 1;
+                    if (n === 1 && !d['prev'])  d['prev']  = r;
+                    else if (n === 2 && !d['prev2']) d['prev2'] = r;
+                    else if (n === 3 && !d['prev3']) d['prev3'] = r;
+                    else if (n === 4 && !d['prev4']) d['prev4'] = r;
+                } else if (tp === 'decklink' || /^decklink_\d+$/.test(String(cell.id || ''))) {
+                    m = String(cell.id || '').match(/decklink_(\d+)/);
+                    if (!m) m = (lbl || '').match(/decklink\s*(\d+)/);
+                    n = m ? parseInt(m[1], 10) - 1 : -1;
+                    if (n >= 0 && n < 8 && !d['decklink' + n]) d['decklink' + n] = r;
+                } else if (tp === 'ndi' || /^ndi_\d+$/.test(String(cell.id || ''))) {
+                    m = String(cell.id || '').match(/ndi_(\d+)/);
+                    if (!m) m = (lbl || '').match(/ndi\s*(\d+)/);
+                    n = m ? parseInt(m[1], 10) - 1 : -1;
+                    if (n >= 0 && n < 8 && !d['ndi' + n]) d['ndi' + n] = r;
+                }
+            }
+            applyOrHide('pgm',  d.pgm);
+            applyOrHide('prev', d.prev);
+            for (var i = 2; i <= 4; i++) {
+                applyOrHide('pgm'  + i, d['pgm'  + i]);
+                applyOrHide('prev' + i, d['prev' + i]);
+            }
+            for (var j = 0; j < 8; j++) {
+                applyOrHide('decklink' + j, d['decklink' + j]);
+                applyOrHide('ndi'      + j, d['ndi'      + j]);
+            }
+        } catch (e) { console.error('multiview_overlay update', e); }
+    };
+    function applyOrHide(id, r) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        if (!r) { el.style.display = 'none'; return; }
+        var x = (r.x || 0) * 100, y = (r.y || 0) * 100, w = (r.w || 0) * 100, h = (r.h || 0) * 100;
+        el.style.left   = 'calc(' + x + '% - ' + BORDER_PX + 'px)';
+        el.style.top    = 'calc(' + y + '% - ' + BORDER_PX + 'px)';
+        el.style.width  = 'calc(' + w + '% + ' + (2 * BORDER_PX) + 'px)';
+        el.style.height = 'calc(' + h + '% + ' + (2 * BORDER_PX + LABEL_HEIGHT_PX) + 'px)';
+        el.style.display = 'block';
+        el.querySelector('.cell-label').textContent = r.label || id;
+    }
+})();
+</script>
+</body>
+</html>

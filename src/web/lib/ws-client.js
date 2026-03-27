@@ -1,0 +1,120 @@
+/**
+ * WebSocket client for CasparCG module real-time state.
+ * Connects to /api/ws or /ws, receives state + change events.
+ * @see main_plan.md Prompt 11
+ */
+
+export class WsClient {
+	constructor(options = {}) {
+		this.url = options.url || (getWsUrl())
+		this.reconnectInterval = options.reconnectInterval ?? 3000
+		this.maxReconnectAttempts = options.maxReconnectAttempts ?? 10
+		this.ws = null
+		this.reconnectAttempts = 0
+		this.listeners = new Map()
+		this._connect()
+	}
+
+	on(event, fn) {
+		if (!this.listeners.has(event)) this.listeners.set(event, [])
+		this.listeners.get(event).push(fn)
+		return () => {
+			const fns = this.listeners.get(event)
+			if (fns) {
+				const i = fns.indexOf(fn)
+				if (i >= 0) fns.splice(i, 1)
+			}
+		}
+	}
+
+	emit(event, data) {
+		const fns = this.listeners.get(event)
+		if (fns) fns.forEach((fn) => fn(data))
+	}
+
+	_send(obj) {
+		if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+			this.ws.send(JSON.stringify(obj))
+		}
+	}
+
+	send(obj) {
+		this._send(obj)
+	}
+
+	sendAmcp(cmd) {
+		return new Promise((resolve) => {
+			const id = Date.now() + '-' + Math.random().toString(36).slice(2)
+			let unsub
+			const handler = (msg) => {
+				if (msg.type === 'amcp_result' && msg.id === id) {
+					if (unsub) unsub()
+					resolve(msg.data)
+				}
+			}
+			unsub = this.on('message', handler)
+			this._send({ type: 'amcp', cmd, id })
+		})
+	}
+
+	_connect() {
+		try {
+			this.ws = new WebSocket(this.url)
+		} catch (e) {
+			this.emit('error', e)
+			this._reconnect()
+			return
+		}
+
+		this.ws.onopen = () => {
+			this.reconnectAttempts = 0
+			this.emit('connect')
+		}
+
+		this.ws.onmessage = (ev) => {
+			try {
+				const msg = JSON.parse(ev.data)
+				this.emit('message', msg)
+				if (msg.type) this.emit(msg.type, msg.data)
+			} catch {
+				// ignore non-JSON
+			}
+		}
+
+		this.ws.onclose = () => {
+			this.emit('disconnect')
+			this._reconnect()
+		}
+
+		this.ws.onerror = (err) => this.emit('error', err)
+	}
+
+	_reconnect() {
+		if (this.reconnectAttempts >= this.maxReconnectAttempts) return
+		this.reconnectAttempts++
+		setTimeout(() => this._connect(), this.reconnectInterval)
+	}
+
+	close() {
+		this.maxReconnectAttempts = 0
+		if (this.ws) {
+			this.ws.close()
+			this.ws = null
+		}
+	}
+
+	get connected() {
+		return this.ws && this.ws.readyState === WebSocket.OPEN
+	}
+}
+
+function getWsUrl() {
+	const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+	const base = location.origin.replace(/^http/, 'ws')
+	const pathPrefix = (() => {
+		const p = location.pathname.replace(/\/$/, '') || '/'
+		const m = p.match(/^(\/instance\/[^/]+)/)
+		return m ? m[1] : ''
+	})()
+	return base + pathPrefix + '/api/ws'
+}

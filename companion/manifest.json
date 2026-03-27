@@ -1,0 +1,34 @@
+{
+	"id": "casparcg-server-gui",
+	"name": "casparcg-server-gui",
+	"shortname": "caspar",
+	"description": "CasparCG module for Companion",
+	"version": "3.0.0",
+	"license": "ISC",
+	"repository": "git+https://github.com/mko1989/companion-module-casparcg-server-gui.git",
+	"bugs": "https://github.com/mko1989/companion-module-casparcg-server-gui/issues",
+	"maintainers": [
+		{
+			"name": "Håkon Nessjøen",
+			"email": "haakon@bitfocus.io"
+		}
+	],
+	"legacyIds": [
+		"casparcg"
+	],
+	"runtime": {
+		"type": "node22",
+		"api": "nodejs-ipc",
+		"apiVersion": "1.0.0",
+		"entrypoint": "../index.js"
+	},
+	"manufacturer": "CasparCG",
+	"products": [
+		"Server"
+	],
+	"keywords": [
+		"Video",
+		"Software",
+		"Graphics"
+	]
+}

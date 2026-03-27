@@ -1,0 +1,46 @@
+**/node_modules
+/pkg
+/pkg.tgz
+/Caspar_amcp_guide
+/companion-module-base-main
+/companion-module-tools-main
+/casparcg_from_server.config
+/casparcg.config
+/HOW_TO_ACHIVE_MULTIVIEWER.MD
+/logs_from_server.md
+/main_plan.md
+/working.md
+/**.tgz
+/.module-state.json
+/.module-state.json.tmp
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+
+# Logs & debug
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Doc extraction / Word artifacts (not needed at runtime)
+/docx_extract/
+/docx_extracted/
+/*.docx
+
+# One-off scripts & scratch files
+/update_docx_config_path.py
+/crash.md
+/Untitled
+
+# Root copies — canonical HTML lives in templates/
+/black.html
+/multiview_overlay.html
